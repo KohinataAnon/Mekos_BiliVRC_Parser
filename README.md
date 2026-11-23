@@ -2,7 +2,7 @@
 
 把 B 站视频 / 直播一键解析成 **VRChat 能直接播放的直链**，并自动复制到剪贴板。
 
-> by Meko · Edge / Chromium 浏览器扩展 · v1.1.0
+> by Meko · Edge / Chromium 浏览器扩展 · v1.1.1
 
 ## ✨ 特性
 

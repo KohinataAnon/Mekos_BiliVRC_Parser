@@ -1,0 +1,87 @@
+/* ============================================================
+   为解析按钮腾出工具栏最右侧的位置
+   让「稿件举报」「做笔记」「···」整体左移 84px。
+   关键：这里写成【静态 CSS】而不是用 JS 动态设置 ——
+   CSS 从 document_start 就生效，页面渲染时元素一出现就已经在左移后的位置，
+   所以不会出现「先画在原位、再跳一下」的动态感。
+   ============================================================ */
+.video-toolbar-right .video-complaint,
+.video-toolbar-right .video-note,
+.video-toolbar-right .video-tool-more {
+  transform: translateX(-84px) !important;
+}
+
+/* 解析按钮的独立悬浮容器：完全不参与 B 站自身布局，避免干扰其框架渲染 */
+#vrc-parse-host {
+  position: fixed;
+  z-index: 1000;
+  display: none;
+  pointer-events: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* 按钮外观：蓝色胶囊（22px 高 / 12px 圆角 / 12px 字号，尺寸与 B 站「关注」按钮一致） */
+#vrc-parse-host .vrc-parse-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 10px;
+  color: #fff;
+  background: #00aeec;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 22px;
+  user-select: none;
+  white-space: nowrap;
+  transition: background .2s, opacity .2s;
+}
+
+#vrc-parse-host .vrc-parse-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+#vrc-parse-host .vrc-parse-btn:hover {
+  background: #009fd6;
+}
+
+#vrc-parse-host .vrc-parse-btn.loading {
+  opacity: .55;
+  pointer-events: none;
+}
+
+#vrc-parse-host .vrc-parse-btn span {
+  line-height: 22px;
+}
+
+#vrc-parse-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 90px;
+  z-index: 99999;
+  max-width: 400px;
+  padding: 11px 16px;
+  border-radius: 8px;
+  background: rgba(33, 33, 33, .93);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.6;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .25s, transform .25s;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+}
+
+#vrc-parse-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#vrc-parse-toast.error {
+  background: rgba(196, 54, 54, .95);
+}

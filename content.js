@@ -246,6 +246,81 @@
     }
   }
 
+  /* ==================== 请求封装（抗风控） ==================== */
+
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // 【两种请求模式】
+  // 实测：部分网络（尤其海外 IP）下，完全匿名的请求会被 B 站风控直接拦成
+  // HTTP 412 + HTML 拦截页；而同一个浏览器在地址栏直接打开同一个接口却是正常的 JSON。
+  // 差别在 cookie —— omit 会把 B 站自己种下的设备标识（buvid3 等）一并剥掉，
+  // 风控就把这种"没有指纹的空请求"当成爬虫。
+  //
+  // 策略：先匿名（最干净）；被拦了再带上 B 站自己的设备 cookie 重试一次。
+  // 哪个模式通了就记住，本页后续请求直接用它，不再多试。
+  // 说明：这里只影响"带不带 cookie"，不读取、不上传任何 cookie 内容，
+  //       也不会改变清晰度上限（720P 是接口通道本身的限制）。
+  const CRED_MODES = [
+    { cred: 'omit', label: '匿名' },
+    { cred: 'include', label: '带设备cookie' }
+  ];
+  let preferCred = null;
+
+  // 所有 B 站接口都从这里出去：
+  //  · 先取 text() 再自己 JSON.parse —— 服务器返回网页时（风控的 412 拦截页）
+  //    能识别出来并给中文提示，而不是甩一句 "Unexpected token '<'" 让人一头雾水
+  //  · 每个模式失败后短暂重试，最后才报错
+  async function fetchJson(url, tag) {
+    const TRY_PER_MODE = 2;
+    let lastErr = null;
+
+    const modes = preferCred
+      ? CRED_MODES.slice().sort((a, b) =>
+          (b.cred === preferCred ? 1 : 0) - (a.cred === preferCred ? 1 : 0))
+      : CRED_MODES;
+
+    for (const m of modes) {
+      for (let i = 0; i < TRY_PER_MODE; i++) {
+        if (i > 0) await sleep(1000);
+
+        let res;
+        try {
+          res = await fetch(url, { credentials: m.cred });
+        } catch (e) {
+          lastErr = new Error('网络请求失败，请检查网络后重试');
+          continue;
+        }
+
+        let text = '';
+        try { text = await res.text(); } catch (e) { text = ''; }
+        const head = text.trimStart().slice(0, 16).toLowerCase();
+
+        // 返回的是网页 → 被风控 / 被拦到验证页
+        if (head.startsWith('<')) {
+          lastErr = new Error('B站风控拦截了请求（HTTP ' + res.status +
+            '）。若反复失败，请确认是否开着 VPN 或代理');
+          break; // 这个模式没戏，换下一种
+        }
+
+        if (!res.ok) {
+          lastErr = new Error('接口请求失败（HTTP ' + res.status + '），请稍后重试');
+          continue;
+        }
+
+        try {
+          const data = JSON.parse(text);
+          preferCred = m.cred;
+          return data;
+        } catch (e) {
+          lastErr = new Error('接口返回内容异常（' + tag + '）');
+          break;
+        }
+      }
+    }
+
+    throw lastErr || new Error('请求失败，请稍后重试');
+  }
+
   /* ==================== 视频解析（页面上下文，纯匿名） ==================== */
 
   async function parseInPage(pageUrl) {
@@ -254,8 +329,7 @@
     const page = extractPage(pageUrl);
 
     // 1) 视频信息 + 分集 cid
-    const vres = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, { credentials: 'omit' });
-    const vj = await vres.json();
+    const vj = await fetchJson(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, '视频信息');
     if (vj.code !== 0) throw new Error('获取视频信息失败: ' + (vj.message || ('code ' + vj.code)));
     const pageList = vj.data.pages || [];
     let cid = vj.data.cid;
@@ -294,8 +368,7 @@
     // 匿名请求：单文件 mp4 通道（durl）上限就是 720P，带不带登录态结果一样，
     // 所以不碰登录态，保持纯净。
     const purl = `https://api.bilibili.com/x/player/playurl?bvid=${bvid}&cid=${cid}&qn=120&fnval=0&fnver=0&fourk=1&platform=html5`;
-    const pres = await fetch(purl, { credentials: 'omit' });
-    const pj = await pres.json();
+    const pj = await fetchJson(purl, '播放地址');
     if (pj.code !== 0) throw new Error('B站接口返回错误: ' + (pj.message || ('code ' + pj.code)));
 
     const d = pj.data || {};
@@ -327,8 +400,7 @@
     if (!roomId) throw new Error('无法识别直播间号');
 
     const api = `https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo?room_id=${roomId}&protocol=0,1&format=0,1,2&codec=0,1&qn=10000&platform=web&ptype=8`;
-    const res = await fetch(api, { credentials: 'omit' });
-    const j = await res.json();
+    const j = await fetchJson(api, '直播播放信息');
     if (j.code !== 0) throw new Error('直播接口返回错误: ' + (j.message || j.code));
 
     const pi = j.data && j.data.playurl_info && j.data.playurl_info.playurl;
@@ -358,7 +430,12 @@
 
   /* ==================== 点击 ==================== */
 
+  let busy = false;
+
   async function onClick() {
+    if (busy) return; // 防连点：连续猛点最容易触发 B 站风控
+    busy = true;
+
     const btn = document.getElementById(BTN_ID);
     if (btn) {
       btn.classList.add('loading');
@@ -388,6 +465,7 @@
     } catch (e) {
       toast(e.message || '解析失败', true);
     } finally {
+      busy = false;
       if (btn) {
         btn.classList.remove('loading');
         const s = btn.querySelector('span');

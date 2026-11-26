@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Meko's BiliVRCParser",
-  "version": "1.1.1",
+  "version": "1.1.3",
   "description": "在B站视频页添加「解析」按钮，一键获取可在VRChat中播放的 mp4 直链并复制到剪贴板。纯本地运行，零第三方依赖。",
   "permissions": [
     "storage",
